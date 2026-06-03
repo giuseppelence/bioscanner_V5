@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIO-SCANNER Pro - Sistema Vettoriale V4</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        .medical-grid { background-image: radial-gradient(#1e293b 1px, transparent 1px); background-size: 30px 30px; }
+        .canvas-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 12px; overflow: hidden; border: 3px solid #334155; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+        video { position: absolute; transform: scaleX(-1); width: 100%; height: 100%; object-fit: cover; }
+        canvas { position: absolute; transform: scaleX(-1); width: 100%; height: 100%; }
+        .spinner { border: 3px solid #1e293b; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        input[type="range"] { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 3px; background: #1e293b; outline: none; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #3b82f6; cursor: pointer; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+        .professional-header { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans medical-grid">
+
+    <div id="loading-screen" class="hidden fixed inset-0 bg-slate-950/95 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div class="text-center">
+            <div class="spinner mx-auto mb-4"></div>
+            <p class="text-sm text-slate-400" id="loading-text">Caricamento...</p>
+        </div>
+    </div>
+
+    <div class="professional-header text-white p-6 shadow-2xl">
+        <div class="max-w-7xl mx-auto flex justify-between items-start">
+            <div>
+                <h1 class="text-3xl font-black mb-1">BIO-SCANNER PRO</h1>
+                <p class="text-blue-200 text-sm font-medium">Analisi Biomeccanica Vettoriale Avanzata | V5 MEDICALCORE - Powered by ANALYTICAITALIA GROUP</p>
+            </div>
+            <div class="text-right">
+                <span id="system-status" class="badge bg-slate-800 text-white border border-slate-600">Sistema In Attesa</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-[1800px] mx-auto p-6">
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <div class="xl:col-span-8 space-y-6">
+                <div id="vision-frame" class="canvas-container group">
+                    <video id="input_video" autoplay playsinline></video>
+                    <canvas id="output_canvas"></canvas>
+                    
+                    <div id="camera-flash" class="absolute inset-0 bg-white opacity-0 pointer-events-none transition-opacity duration-150 z-40"></div>
+
+                    <div id="camera-placeholder" class="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-950 z-50">
+                        <div class="text-center p-8">
+                            <p class="text-slate-400 text-lg font-bold mb-2">Sistema in Standby</p>
+                            <button onclick="startCamera()" id="start-btn" class="mt-4 px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold uppercase transition shadow-lg">
+                                ▶ Avvia Sistema
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 text-center">
+                        <p class="text-[10px] text-slate-400 uppercase font-bold">Tilt Spalle / Anche</p>
+                        <p id="live-tilt" class="text-2xl font-mono font-bold text-white">--° / --°</p>
+                    </div>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 text-center">
+                        <p class="text-[10px] text-slate-400 uppercase font-bold">Dev. Tronco / Collo</p>
+                        <p id="live-axes" class="text-2xl font-mono font-bold text-white">--° / --°</p>
+                    </div>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 text-center">
+                        <p class="text-[10px] text-slate-400 uppercase font-bold">Max Dev. Braccia</p>
+                        <p id="live-arms" class="text-2xl font-mono font-bold text-white">--°</p>
+                    </div>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 text-center">
+                        <p class="text-[10px] text-slate-400 uppercase font-bold">Max Dev. Gambe</p>
+                        <p id="live-legs" class="text-2xl font-mono font-bold text-white">--°</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="xl:col-span-4 space-y-4 h-[800px] overflow-y-auto custom-scrollbar pr-2">
+                
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg border-l-4 border-l-blue-500">
+                    <h3 class="text-sm font-bold text-blue-400 uppercase mb-4 flex items-center justify-between">
+                        <span>4. Acquisizione e Report</span>
+                    </h3>
+                    
+                    <div class="space-y-3">
+                        <button onclick="takeSnapshot()" class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 rounded-lg font-bold text-white shadow-md transition-all flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                            Scatta Foto Manuale
+                        </button>
+
+                        <button onclick="generatePDF()" class="w-full px-4 py-3 bg-red-600 hover:bg-red-500 active:bg-red-700 rounded-lg font-bold text-white shadow-md transition-all flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            Genera Report PDF
+                        </button>
+                        
+                        <div class="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700 mt-2">
+                            <span class="text-sm font-medium text-slate-300">Auto-Scatto in Fase Critica</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="auto-capture-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+                            </label>
+                        </div>
+
+                        <div class="pt-3 border-t border-slate-800">
+                            <p class="text-xs text-slate-500 mb-2 font-bold uppercase">Galleria Acquisizioni</p>
+                            <div id="snapshot-gallery" class="grid grid-cols-2 gap-4 overflow-y-auto custom-scrollbar max-h-96 pr-2">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 opacity-90 hover:opacity-100 transition-opacity">
+                    <h3 class="text-sm font-bold text-slate-300 uppercase mb-4">1. Assetto Assiale (Testa / Tronco / Bacino)</h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Tilt Orizzontale Giallo (Spalle/Anche)</span>
+                                <span id="val-trunk-warn" class="text-yellow-400 font-bold">5°</span>
+                            </div>
+                            <input type="range" id="trunk-warn" min="1" max="15" value="5" oninput="document.getElementById('val-trunk-warn').innerText=this.value+'°'">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Tilt Orizzontale Rosso</span>
+                                <span id="val-trunk-crit" class="text-red-400 font-bold">10°</span>
+                            </div>
+                            <input type="range" id="trunk-crit" min="2" max="30" value="10" oninput="document.getElementById('val-trunk-crit').innerText=this.value+'°'">
+                        </div>
+                        
+                        <div class="pt-3 border-t border-slate-800">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Toll. Deviazione Asse Tronco (0-45°)</span>
+                                <span id="val-trunk-dev-tol" class="text-red-400 font-bold">10°</span>
+                            </div>
+                            <input type="range" id="trunk-dev-tol" min="1" max="45" value="10" oninput="document.getElementById('val-trunk-dev-tol').innerText=this.value+'°'">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Toll. Deviazione Asse Collo (0-90°)</span>
+                                <span id="val-neck-dev-tol" class="text-red-400 font-bold">15°</span>
+                            </div>
+                            <input type="range" id="neck-dev-tol" min="1" max="90" value="15" oninput="document.getElementById('val-neck-dev-tol').innerText=this.value+'°'">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 opacity-90 hover:opacity-100 transition-opacity">
+                    <h3 class="text-sm font-bold text-slate-300 uppercase mb-2">2. Arti Superiori</h3>
+                    <p class="text-[10px] text-slate-500 mb-4 leading-tight">Gradi calcolati dal vettore del corpo.</p>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Target Spalla-Gomito</span>
+                                <span id="val-arm-target" class="text-white font-bold">0°</span>
+                            </div>
+                            <input type="range" id="arm-target" min="0" max="180" value="0" oninput="document.getElementById('val-arm-target').innerText=this.value+'°'">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Target Gomito-Polso</span>
+                                <span id="val-forearm-target" class="text-white font-bold">0°</span>
+                            </div>
+                            <input type="range" id="forearm-target" min="0" max="180" value="0" oninput="document.getElementById('val-forearm-target').innerText=this.value+'°'">
+                        </div>
+                        <div class="pt-2 border-t border-slate-800">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Toll. Spalla-Gomito (Rosso se >)</span>
+                                <span id="val-arm-tol" class="text-red-400 font-bold">10°</span>
+                            </div>
+                            <input type="range" id="arm-tol" min="1" max="45" value="10" oninput="document.getElementById('val-arm-tol').innerText=this.value+'°'">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Toll. Gomito-Polso (Rosso se >)</span>
+                                <span id="val-forearm-tol" class="text-red-400 font-bold">10°</span>
+                            </div>
+                            <input type="range" id="forearm-tol" min="1" max="45" value="10" oninput="document.getElementById('val-forearm-tol').innerText=this.value+'°'">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 opacity-90 hover:opacity-100 transition-opacity">
+                    <h3 class="text-sm font-bold text-slate-300 uppercase mb-2">3. Arti Inferiori</h3>
+                    <p class="text-[10px] text-slate-500 mb-4 leading-tight">Gradi calcolati dal vettore del corpo.</p>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Target Anca-Ginocchio</span>
+                                <span id="val-leg-target" class="text-white font-bold">0°</span>
+                            </div>
+                            <input type="range" id="leg-target" min="0" max="180" value="0" oninput="document.getElementById('val-leg-target').innerText=this.value+'°'">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Target Ginocchio-Caviglia</span>
+                                <span id="val-lowerleg-target" class="text-white font-bold">0°</span>
+                            </div>
+                            <input type="range" id="lowerleg-target" min="0" max="180" value="0" oninput="document.getElementById('val-lowerleg-target').innerText=this.value+'°'">
+                        </div>
+                        <div class="pt-2 border-t border-slate-800">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Toll. Anca-Ginocchio (Rosso se >)</span>
+                                <span id="val-leg-tol" class="text-red-400 font-bold">12°</span>
+                            </div>
+                            <input type="range" id="leg-tol" min="1" max="45" value="12" oninput="document.getElementById('val-leg-tol').innerText=this.value+'°'">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Toll. Ginocchio-Caviglia (Rosso se >)</span>
+                                <span id="val-lowerleg-tol" class="text-red-400 font-bold">12°</span>
+                            </div>
+                            <input type="range" id="lowerleg-tol" min="1" max="45" value="12" oninput="document.getElementById('val-lowerleg-tol').innerText=this.value+'°'">
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        
+        let pose, videoStream = null, isRunning = false;
+
+        // Array per mantenere le immagini e i relativi dati metrici per il PDF
+        let capturedData = [];
+        
+        // Oggetto globale per tenere traccia delle metriche calcolate nell'ultimo frame
+        let currentMetrics = {};
+
+        let autoCaptureEnabled = false;
+        let lastCaptureTime = 0;
+        const CAPTURE_COOLDOWN = 3000; 
+
+        document.getElementById('auto-capture-toggle').addEventListener('change', (e) => {
+            autoCaptureEnabled = e.target.checked;
+        });
+
+        function showLoading(text) {
+            document.getElementById('loading-text').textContent = text;
+            document.getElementById('loading-screen').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-screen').classList.add('hidden');
+        }
+
+        // Funzione per generare il PDF
+        function generatePDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Intestazione
+            doc.setFontSize(22);
+            doc.setTextColor(30, 58, 138); 
+            doc.text("BIO-SCANNER PRO", 15, 20);
+            
+            doc.setFontSize(12);
+            doc.setTextColor(100, 116, 139); 
+            doc.text("Analisi Biomeccanica Vettoriale - Report di Valutazione", 15, 28);
+            
+            const dateStr = new Date().toLocaleString('it-IT');
+            doc.setFontSize(10);
+            doc.text(`Data e Ora acquisizione: ${dateStr}`, 15, 36);
+            
+            doc.setDrawColor(226, 232, 240);
+            doc.line(15, 42, 195, 42);
+
+            // Generazione Tabella Dati (usando i dati LIVE correnti come Summary)
+            if(Object.keys(currentMetrics).length > 0) {
+                doc.setFontSize(14);
+                doc.setTextColor(15, 23, 42);
+                doc.text("Tabella Scostamenti Segmentali (Valori Attuali):", 15, 52);
+
+                const tableData = [
+                    ['Spalle (Tilt Orizzontale)', '-', '-', currentMetrics.shTilt.toFixed(1) + '°'],
+                    ['Bacino (Tilt Orizzontale)', '-', '-', currentMetrics.hipTilt.toFixed(1) + '°'],
+                    ['Asse Tronco (Deviazione)', '-', '-', currentMetrics.trunkDev.toFixed(1) + '°'],
+                    ['Asse Collo (Deviazione)', '-', '-', currentMetrics.neckDev.toFixed(1) + '°'],
+                    ['Spalla-Gomito', currentMetrics.lArm.toFixed(1) + '°', currentMetrics.rArm.toFixed(1) + '°', Math.abs(currentMetrics.lArm - currentMetrics.rArm).toFixed(1) + '°'],
+                    ['Gomito-Polso', currentMetrics.lForearm.toFixed(1) + '°', currentMetrics.rForearm.toFixed(1) + '°', Math.abs(currentMetrics.lForearm - currentMetrics.rForearm).toFixed(1) + '°'],
+                    ['Anca-Ginocchio', currentMetrics.lLeg.toFixed(1) + '°', currentMetrics.rLeg.toFixed(1) + '°', Math.abs(currentMetrics.lLeg - currentMetrics.rLeg).toFixed(1) + '°'],
+                    ['Ginocchio-Caviglia', currentMetrics.lLowerLeg.toFixed(1) + '°', currentMetrics.rLowerLeg.toFixed(1) + '°', Math.abs(currentMetrics.lLowerLeg - currentMetrics.rLowerLeg).toFixed(1) + '°']
+                ];
+
+                doc.autoTable({
+                    startY: 58,
+                    head: [['Segmento Anatomico', 'Lato Sinistro', 'Lato Destro', 'Asimmetria / Delta (\u0394)']],
+                    body: tableData,
+                    theme: 'grid',
+                    headStyles: { fillColor: [30, 58, 138] },
+                    styles: { fontSize: 10, halign: 'center' },
+                    columnStyles: { 0: { halign: 'left', fontStyle: 'bold' } }
+                });
+            }
+
+            // Inserimento Foto
+            if (capturedData.length > 0) {
+                let yOffset = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : 96;
+                doc.setFontSize(14);
+                doc.setTextColor(15, 23, 42);
+                doc.text("Acquisizioni Posturali (Galleria):", 15, yOffset);
+                yOffset += 10;
+                
+                // Ordine cronologico inverso
+                for (let i = 0; i < capturedData.length; i++) {
+                    if (yOffset > 210) { doc.addPage(); yOffset = 20; }
+                    
+                    doc.addImage(capturedData[i].imgUrl, 'JPEG', 25, yOffset, 160, 90);
+                    
+                    // Didascalia e valori catturati al momento dello scatto
+                    doc.setFontSize(9);
+                    doc.setTextColor(100, 116, 139);
+                    const m = capturedData[i].metrics;
+                    doc.text(`Immagine ${i+1} - Tilt Spalle: ${m.shTilt.toFixed(1)}° | Tilt Bacino: ${m.hipTilt.toFixed(1)}° | Dev. Tronco: ${m.trunkDev.toFixed(1)}° | Dev. Collo: ${m.neckDev.toFixed(1)}°`, 25, yOffset + 95);
+                    
+                    yOffset += 105;
+                }
+            } else {
+                let yOffset = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : 96;
+                doc.setFontSize(12);
+                doc.setTextColor(239, 68, 68);
+                doc.text("Nessuna foto acquisita per questo report.", 15, yOffset);
+            }
+            
+            const timestamp = new Date().toISOString().replace(/T/, '_').replace(/\..+/, '').replace(/:/g, '-');
+            doc.save(`BioScanner_Report_${timestamp}.pdf`);
+        }
+
+        function takeSnapshot() {
+            if(!isRunning || !videoElement.videoWidth || Object.keys(currentMetrics).length === 0) return;
+
+            const flash = document.getElementById('camera-flash');
+            flash.classList.replace('opacity-0', 'opacity-75');
+            setTimeout(() => { flash.classList.replace('opacity-75', 'opacity-0'); }, 150);
+
+            const snapCanvas = document.createElement('canvas');
+            snapCanvas.width = canvasElement.width;
+            snapCanvas.height = canvasElement.height;
+            const ctx = snapCanvas.getContext('2d');
+
+            ctx.save();
+            ctx.scale(-1, 1);
+            ctx.translate(-snapCanvas.width, 0);
+            
+            ctx.drawImage(videoElement, 0, 0, snapCanvas.width, snapCanvas.height);
+            ctx.drawImage(canvasElement, 0, 0, snapCanvas.width, snapCanvas.height);
+            ctx.restore();
+
+            const dataURL = snapCanvas.toDataURL('image/jpeg', 0.85);
+            
+            // Creiamo una copia profonda delle metriche attuali per questa foto
+            const snapshotMetrics = JSON.parse(JSON.stringify(currentMetrics));
+
+            // Salva nel nostro array per il PDF
+            capturedData.unshift({ imgUrl: dataURL, metrics: snapshotMetrics });
+
+            // Aggiungila alla UI (Galleria) con testo descrittivo
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex flex-col gap-1';
+
+            const imgContainer = document.createElement('div');
+            imgContainer.className = 'relative group border border-slate-700 rounded overflow-hidden aspect-video bg-black';
+            
+            const img = document.createElement('img');
+            img.src = dataURL;
+            img.className = 'w-full h-full object-cover';
+            
+            const downloadLink = document.createElement('a');
+            downloadLink.href = dataURL;
+            const timestamp = new Date().toISOString().replace(/T/, '_').replace(/\..+/, '').replace(/:/g, '-');
+            downloadLink.download = `Bioscanner_Postura_${timestamp}.jpg`;
+            downloadLink.className = 'absolute inset-0 bg-blue-900/80 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs font-bold cursor-pointer';
+            downloadLink.innerHTML = `<svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> SCARICA`;
+            
+            imgContainer.appendChild(img);
+            imgContainer.appendChild(downloadLink);
+
+            const metricsText = document.createElement('div');
+            metricsText.className = 'text-[9px] text-slate-300 bg-slate-800 p-1.5 rounded leading-tight border border-slate-700';
+            metricsText.innerHTML = `
+                <span class="font-bold text-white">Tronco:</span> ${snapshotMetrics.trunkDev.toFixed(1)}° | <span class="font-bold text-white">Collo:</span> ${snapshotMetrics.neckDev.toFixed(1)}°<br>
+                <span class="font-bold text-white">Spalle:</span> ${snapshotMetrics.shTilt.toFixed(1)}° | <span class="font-bold text-white">Bacino:</span> ${snapshotMetrics.hipTilt.toFixed(1)}°
+            `;
+
+            wrapper.appendChild(imgContainer);
+            wrapper.appendChild(metricsText);
+            
+            const gallery = document.getElementById('snapshot-gallery');
+            gallery.insertBefore(wrapper, gallery.firstChild);
+        }
+
+        // --- MOTORE VETTORIALE ---
+        function createVector(p1, p2) { return { x: p2.x - p1.x, y: p2.y - p1.y }; }
+
+        function angleBetweenVectors(v1, v2) {
+            const dotProduct = (v1.x * v2.x) + (v1.y * v2.y);
+            const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+            const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+            if (mag1 === 0 || mag2 === 0) return 0;
+            let cosTheta = Math.max(-1, Math.min(1, dotProduct / (mag1 * mag2))); 
+            return Math.acos(cosTheta) * (180 / Math.PI);
+        }
+
+        function drawBone(p1, p2, color, width = 6) {
+            if (!p1 || !p2 || p1.visibility < 0.5 || p2.visibility < 0.5) return;
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
+            canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
+            canvasCtx.strokeStyle = color;
+            canvasCtx.lineWidth = width;
+            canvasCtx.stroke();
+            canvasCtx.beginPath();
+            canvasCtx.arc(p1.x * canvasElement.width, p1.y * canvasElement.height, width/1.5, 0, 2 * Math.PI);
+            canvasCtx.fillStyle = color;
+            canvasCtx.fill();
+        }
+
+        async function startCamera() {
+            try {
+                showLoading('Inizializzazione webcam...');
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }
+                });
+                videoElement.srcObject = videoStream;
+                
+                await new Promise((resolve) => {
+                    videoElement.onloadedmetadata = () => { videoElement.play().then(resolve); };
+                });
+                
+                showLoading('Caricamento MediaPipe Pose...');
+                pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
+                pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+                pose.onResults(onResults);
+                
+                document.getElementById('camera-placeholder').style.display = 'none';
+                document.getElementById('system-status').textContent = '✓ Motore Vettoriale Attivo';
+                document.getElementById('system-status').className = 'badge bg-green-600 text-white border border-green-500';
+                isRunning = true;
+                
+                async function processFrame() {
+                    if (!isRunning) return;
+                    if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+                        await pose.send({image: videoElement});
+                    }
+                    requestAnimationFrame(processFrame);
+                }
+                processFrame();
+                hideLoading();
+            } catch (error) {
+                hideLoading();
+                alert('Errore avvio camera: ' + error.message);
+            }
+        }
+
+        function onResults(results) {
+            if (!results.poseLandmarks) return;
+            
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            const lm = results.poseLandmarks;
+            const ls = lm[11], rs = lm[12]; const lh = lm[23], rh = lm[24]; 
+            const le = lm[13], re = lm[14]; const lw = lm[15], rw = lm[16]; 
+            const lk = lm[25], rk = lm[26]; const la = lm[27], ra = lm[28];
+            const leftEar = lm[7], rightEar = lm[8];
+
+            const trkWarn = parseFloat(document.getElementById('trunk-warn').value);
+            const trkCrit = parseFloat(document.getElementById('trunk-crit').value);
+            
+            // Nuove tolleranze assi verticali
+            const trunkDevTol = parseFloat(document.getElementById('trunk-dev-tol').value);
+            const neckDevTol = parseFloat(document.getElementById('neck-dev-tol').value);
+            
+            const armTarget = parseFloat(document.getElementById('arm-target').value);
+            const forearmTarget = parseFloat(document.getElementById('forearm-target').value);
+            const armTol = parseFloat(document.getElementById('arm-tol').value);
+            const forearmTol = parseFloat(document.getElementById('forearm-tol').value); 
+            
+            const legTarget = parseFloat(document.getElementById('leg-target').value);
+            const lowerlegTarget = parseFloat(document.getElementById('lowerleg-target').value);
+            const legTol = parseFloat(document.getElementById('leg-tol').value);
+            const lowerlegTol = parseFloat(document.getElementById('lowerleg-tol').value); 
+
+            // Vettori Riferimento Assoluti
+            const vecHorizontal = { x: 1, y: 0 };
+            const vecVertical = { x: 0, y: -1 }; // Vettore che punta dritto verso l'alto (y decresce)
+
+            // Punti mediani
+            const midSh = { x: (ls.x + rs.x)/2, y: (ls.y + rs.y)/2 };
+            const midHip = { x: (lh.x + rh.x)/2, y: (lh.y + rh.y)/2 };
+            const headCenter = { x: (leftEar.x + rightEar.x)/2, y: (leftEar.y + rightEar.y)/2 };
+
+            // Assi Principali
+            const vecTrunk = createVector(midHip, midSh); // Dal bacino alle spalle
+            const vecNeck = createVector(midSh, headCenter); // Dalle spalle al centro testa
+
+            let isFrameCritical = false;
+
+            // --- 1. TILT ORIZZONTALI ---
+            let shTilt = angleBetweenVectors(createVector(rs, ls), vecHorizontal);
+            if (shTilt > 90) shTilt = 180 - shTilt; 
+
+            let hipTilt = angleBetweenVectors(createVector(rh, lh), vecHorizontal);
+            if (hipTilt > 90) hipTilt = 180 - hipTilt; 
+
+            let shColor = shTilt <= trkWarn ? '#10b981' : (shTilt <= trkCrit ? '#eab308' : '#ef4444');
+            let hipColor = hipTilt <= trkWarn ? '#10b981' : (hipTilt <= trkCrit ? '#eab308' : '#ef4444');
+            if(shColor === '#ef4444' || hipColor === '#ef4444') isFrameCritical = true;
+
+            drawBone(ls, rs, shColor);
+            drawBone(lh, rh, hipColor);
+            document.getElementById('live-tilt').innerText = `${shTilt.toFixed(1)}° / ${hipTilt.toFixed(1)}°`;
+
+            // --- 2. ASSI VERTICALI (Tronco e Collo) ---
+            let trunkDev = angleBetweenVectors(vecTrunk, vecVertical);
+            if (trunkDev > 90) trunkDev = Math.abs(180 - trunkDev); // Deviazione assoluta dalla verticale
+            
+            let neckDev = angleBetweenVectors(vecNeck, vecVertical);
+            if (neckDev > 90) neckDev = Math.abs(180 - neckDev);
+
+            let trunkColor = trunkDev <= trunkDevTol ? '#10b981' : '#ef4444';
+            let neckColor = neckDev <= neckDevTol ? '#10b981' : '#ef4444';
+            
+            if(trunkColor === '#ef4444' || neckColor === '#ef4444') isFrameCritical = true;
+
+            // Disegna fittiziamente gli assi per visualizzazione
+            drawBone({x: midHip.x, y: midHip.y, visibility: 1}, {x: midSh.x, y: midSh.y, visibility: 1}, trunkColor, 4);
+            drawBone({x: midSh.x, y: midSh.y, visibility: 1}, {x: headCenter.x, y: headCenter.y, visibility: 1}, neckColor, 4);
+
+            document.getElementById('live-axes').innerText = `${trunkDev.toFixed(1)}° / ${neckDev.toFixed(1)}°`;
+
+            // --- 3. ARTI SUPERIORI ---
+            let maxArmDev = 0; let errColor;
+            
+            // Angoli base (da usare per la tabella e calcoli Delta)
+            let rArmAng = angleBetweenVectors(createVector(rs, re), vecTrunk);
+            let rForearmAng = angleBetweenVectors(createVector(re, rw), vecTrunk);
+            let lArmAng = angleBetweenVectors(createVector(ls, le), vecTrunk);
+            let lForearmAng = angleBetweenVectors(createVector(le, lw), vecTrunk);
+
+            let rArmErr = Math.abs(rArmAng - armTarget);
+            errColor = rArmErr <= armTol ? '#10b981' : '#ef4444';
+            if (errColor === '#ef4444') isFrameCritical = true;
+            drawBone(rs, re, errColor); maxArmDev = Math.max(maxArmDev, rArmErr);
+
+            let rForearmErr = Math.abs(rForearmAng - forearmTarget);
+            errColor = rForearmErr <= forearmTol ? '#10b981' : '#ef4444';
+            if (errColor === '#ef4444') isFrameCritical = true;
+            drawBone(re, rw, errColor); maxArmDev = Math.max(maxArmDev, rForearmErr);
+
+            let lArmErr = Math.abs(lArmAng - armTarget);
+            errColor = lArmErr <= armTol ? '#10b981' : '#ef4444';
+            if (errColor === '#ef4444') isFrameCritical = true;
+            drawBone(ls, le, errColor); maxArmDev = Math.max(maxArmDev, lArmErr);
+
+            let lForearmErr = Math.abs(lForearmAng - forearmTarget);
+            errColor = lForearmErr <= forearmTol ? '#10b981' : '#ef4444';
+            if (errColor === '#ef4444') isFrameCritical = true;
+            drawBone(le, lw, errColor); maxArmDev = Math.max(maxArmDev, lForearmErr);
+
+            document.getElementById('live-arms').innerText = maxArmDev.toFixed(1) + "°";
+
+            // --- 4. ARTI INFERIORI ---
+            let maxLegDev = 0;
+            
+            let rLegAng = angleBetweenVectors(createVector(rh, rk), vecTrunk);
+            let rLowerLegAng = angleBetweenVectors(createVector(rk, ra), vecTrunk);
+            let lLegAng = angleBetweenVectors(createVector(lh, lk), vecTrunk);
+            let lLowerLegAng = angleBetweenVectors(createVector(lk, la), vecTrunk);
+
+            let rLegErr = Math.abs(rLegAng - legTarget);
+            errColor = rLegErr <= legTol ? '#10b981' : '#ef4444';
+            if (errColor === '#ef4444') isFrameCritical = true;
+            drawBone(rh, rk, errColor); maxLegDev = Math.max(maxLegDev, rLegErr);
+
+            let rLowerLegErr = Math.abs(rLowerLegAng - lowerlegTarget);
+            errColor = rLowerLegErr <= lowerlegTol ? '#10b981' : '#ef4444';
+            if (errColor === '#ef4444') isFrameCritical = true;
+            drawBone(rk, ra, errColor); maxLegDev = Math.max(maxLegDev, rLowerLegErr);
+
+            let lLegErr = Math.abs(lLegAng - legTarget);
+            errColor = lLegErr <= legTol ? '#10b981' : '#ef4444';
+            if (errColor === '#ef4444') isFrameCritical = true;
+            drawBone(lh, lk, errColor); maxLegDev = Math.max(maxLegDev, lLegErr);
+
+            let lLowerLegErr = Math.abs(lLowerLegAng - lowerlegTarget);
+            errColor = lLowerLegErr <= lowerlegTol ? '#10b981' : '#ef4444';
+            if (errColor === '#ef4444') isFrameCritical = true;
+            drawBone(lk, la, errColor); maxLegDev = Math.max(maxLegDev, lLowerLegErr);
+
+            document.getElementById('live-legs').innerText = maxLegDev.toFixed(1) + "°";
+
+            // Popolamento oggetto Globale per il table PDF e UI Snapshot
+            currentMetrics = {
+                shTilt: shTilt,
+                hipTilt: hipTilt,
+                trunkDev: trunkDev,
+                neckDev: neckDev,
+                rArm: rArmAng, lArm: lArmAng,
+                rForearm: rForearmAng, lForearm: lForearmAng,
+                rLeg: rLegAng, lLeg: lLegAng,
+                rLowerLeg: rLowerLegAng, lLowerLeg: lLowerLegAng
+            };
+
+            canvasCtx.restore();
+
+            // --- LOGICA AUTO-SCATTO ---
+            if (autoCaptureEnabled && isFrameCritical) {
+                const now = Date.now();
+                if (now - lastCaptureTime > CAPTURE_COOLDOWN) {
+                    takeSnapshot();
+                    lastCaptureTime = now;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
